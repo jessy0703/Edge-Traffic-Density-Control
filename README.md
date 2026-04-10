@@ -1,132 +1,134 @@
 # 🚦 Edge-Based Smart Traffic Density & Signal Controller
 
 ## 📌 Project Overview
-Urban traffic congestion is a major problem due to static signal timings that do not adapt to real-time traffic conditions.  
-This project presents an **edge AI-based intelligent traffic control system** that dynamically adjusts traffic signal timing based on real-time vehicle density.
+Urban intersections often suffer from inefficient traffic management due to static signal timings.  
+This project presents an **edge AI-based smart traffic control system** that dynamically adjusts signal timing based on real-time vehicle density.
 
-The system uses **YOLOv5 object detection** deployed on an edge device (Jetson Nano) to analyze traffic video and make decisions without relying on cloud infrastructure.
+The system uses **YOLOv5 object detection** to analyze traffic video and make decisions locally on an edge device (Jetson Nano), eliminating the need for cloud processing.
 
 ---
 
 ## 🎯 Objectives
 - Detect vehicles in real-time using computer vision  
 - Estimate traffic density using Region of Interest (ROI)  
-- Dynamically adjust signal timing based on traffic conditions  
-- Reduce congestion, waiting time, and fuel consumption  
+- Dynamically control signal timing  
+- Reduce congestion and waiting time  
 
 ---
 
 ## 🧠 System Pipeline
-Video Input → YOLOv5 Detection → ROI Filtering → Vehicle Counting → Density Estimation → Signal Decision → LED Output
-
+Video Input → YOLOv5 Detection → ROI Filtering → Vehicle Counting → Density Estimation → Signal Decision → Output (Display / LED)
 
 ---
 
 ## ⚙️ Technologies Used
-
-- **Python**  
-- **OpenCV** (video processing)  
-- **PyTorch** (model inference)  
-- **YOLOv5** (object detection)  
-- **Jetson Nano** (edge computing platform)  
-- **Jetson.GPIO** (hardware interfacing)  
+- Python  
+- OpenCV  
+- PyTorch  
+- YOLOv5  
+- Jetson Nano  
+- Jetson.GPIO  
 
 ---
 
 ## 🚗 Key Features
-
-- ✅ Real-time vehicle detection using YOLOv5  
-- ✅ ROI-based filtering for accurate queue estimation  
-- ✅ Density classification (Low / Medium / High)  
-- ✅ Adaptive traffic signal control logic  
-- ✅ Edge deployment (no cloud dependency)  
-- ✅ Hardware simulation using LED traffic signals  
+- Real-time vehicle detection  
+- ROI-based vehicle counting  
+- Density classification (Low / Medium / High)  
+- Adaptive traffic signal logic  
+- Multi-video processing (different traffic scenarios)  
+- Output video generation  
+- Performance metrics (FPS display)  
+- Graph-based analysis  
 
 ---
 
-## 📊 Density Estimation Logic
+## 📊 Dataset Used
+The system was tested using:
+- Custom traffic video (`traffic.mp4`)  
+- Standard dataset sequences (UA-DETRAC image sequences converted to video)  
 
-| Vehicle Count | Density Level |
-|--------------|-------------|
-| 0 – 7        | LOW         |
-| 8 – 15       | MEDIUM      |
-| > 15         | HIGH        |
+> Note: Dataset frames were converted into video format using OpenCV for real-time processing.
+
+---
+
+## 📊 Density Logic
+
+| Vehicle Count | Density |
+|--------------|--------|
+| 0 – 7        | LOW    |
+| 8 – 15       | MEDIUM |
+| > 15         | HIGH   |
 
 ---
 
 ## 🚦 Signal Control Logic
 
-| Density | Signal | Time Duration |
-|--------|--------|--------------|
-| LOW    | RED    | 15 seconds   |
-| MEDIUM | YELLOW | 25 seconds   |
-| HIGH   | GREEN  | 40 seconds   |
+| Density | Signal | Time |
+|--------|--------|------|
+| LOW    | RED    | 15s  |
+| MEDIUM | YELLOW | 25s  |
+| HIGH   | GREEN  | 40s  |
 
 ---
 
 ## 🔌 Hardware Implementation
-
-The system simulates a traffic signal using LEDs connected to the Jetson Nano:
-
 - 🔴 Red LED → Stop  
 - 🟡 Yellow LED → Wait  
 - 🟢 Green LED → Go  
 
-Each LED is controlled via GPIO pins based on the decision logic.
+Controlled via Jetson Nano GPIO pins.
 
 ---
 
 ## 📁 Project Structure
 Edge-Traffic-Density-Control/
 │
-├── src/ # Main detection & control code
-├── hardware/ # GPIO control module
-├── data/ # Input traffic videos
-├── demo/ # Demo video of working system
-├── report/ # Project report (IEEE format)
-├── presentation/ # PPT slides
+├── src/ # Main code
+├── hardware/ # GPIO control
+├── data/ # Input videos
+├── outputs/ # Results & logs
+├── demo/ # Demo video
+├── report/ # Project report
+├── presentation/ # PPT
 ├── README.md
 
 ---
 
+## 📈 Results and Analysis
+The system was tested on multiple traffic scenarios (low, medium, and high density).  
+
+- Successfully detected vehicles in real-time  
+- Correctly classified traffic density  
+- Adaptively adjusted signal timing  
+- Achieved real-time performance (10–20 FPS approx.)
+
+Graph-based analysis of vehicle counts is included in the `outputs/` folder.
+
+---
+
 ## 🎥 Demo
-
-A demonstration of the system is available in the `demo/` folder, showcasing:
-- Real-time vehicle detection  
-- Density estimation  
-- Signal decision updates  
-- Hardware (LED) response  
+A demonstration video of the working system is available in the `demo/` folder.
 
 ---
 
-## 📄 Report
-
-The complete project report (written in IEEE format) is available in the `report/` folder.
-
----
-
-## 🧠 System Advantages
-
-- 🚀 Real-time processing using edge AI  
-- 💰 Low-cost implementation  
-- 🔌 No dependency on internet/cloud  
-- 📉 Reduces traffic congestion and idle time  
-- 🌱 Helps reduce fuel consumption and emissions  
+## 🧠 Advantages
+- Real-time processing using edge AI  
+- No cloud dependency  
+- Low-cost and scalable  
+- Reduces congestion and fuel wastage  
 
 ---
 
 ## 🚀 Future Scope
-
-- Multi-lane traffic management  
-- Reinforcement learning-based signal optimization  
-- Integration with real-time CCTV systems  
+- Multi-lane traffic control  
+- Reinforcement learning-based optimization  
+- Integration with real CCTV systems  
 - Smart city deployment  
-- Vehicle priority (ambulance/fire truck detection)  
 
 ---
 
 ## 👨‍💻 Team Members
-
 - Jessica Salonee  
 - Gaurav  
 - Vansh  
@@ -134,8 +136,6 @@ The complete project report (written in IEEE format) is available in the `report
 ---
 
 ## 🧠 Conclusion
-
-This project demonstrates how **edge AI can be effectively used to design intelligent traffic systems**.  
-By combining computer vision, real-time processing, and control logic, the system provides a scalable solution for modern urban traffic management.
+This project demonstrates how **edge AI can enable intelligent traffic management systems** by combining computer vision, real-time processing, and control logic.
 
 ---
