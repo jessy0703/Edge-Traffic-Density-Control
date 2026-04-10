@@ -1,0 +1,7 @@
+# Ignore large videos
+outputs/*.mp4
+data/*.mp4
+
+# Optional
+__pycache__/
+*.pyc
