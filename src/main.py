@@ -1,90 +1,139 @@
 import torch
-import cv2 
+import cv2
+import os
+import time
 
 from hardware.gpio_control import set_signal, cleanup
 
+# Load YOLOv5 model
 model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True)
 
-cap = cv2.VideoCapture("data/traffic.mp4")
+# Folder containing ALL videos
+video_folder = "data"
 
-# Vehicle classes (COCO dataset IDs)
-vehicle_classes = [2, 3, 5, 7]  
-# 2=car, 3=motorcycle, 5=bus, 7=truck
+# Output folder
+output_folder = "outputs"
+os.makedirs(output_folder, exist_ok=True)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+# Get all video files
+video_files = [f for f in os.listdir(video_folder) if f.endswith((".mp4", ".avi"))]
 
-    h, w, _ = frame.shape
-    roi = (0, int(h*0.5), w, h)  # bottom half of frame
+# Store results for report
+results_log = []
 
-    cv2.rectangle(frame, (roi[0], roi[1]), (roi[2], roi[3]), (255,0,0), 2)
+try:
+    for video_name in video_files:
 
-    results = model(frame)
-    detections = results.xyxy[0]
+        print(f"\nProcessing: {video_name}")
 
-    vehicle_count = 0
+        cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
 
-    for *box, conf, cls in detections:
+        # Video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = None
 
-        cls = int(cls.item())  # ✅ FIX 1
+        prev_time = 0
 
-        if cls in vehicle_classes:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-            x1, y1, x2, y2 = [int(x.item()) for x in box]  # ✅ FIX 2
+            h, w, _ = frame.shape
 
-            cx = (x1 + x2) // 2
-            cy = (y1 + y2) // 2
+            # Initialize output video writer
+            if out is None:
+                out = cv2.VideoWriter(
+                    os.path.join(output_folder, f"output_{video_name}"),
+                    fourcc, 10, (w, h)
+                )
 
-            # Check if inside ROI
-            if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
-                vehicle_count += 1
-                cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
-    
-    # Density classification
-    if vehicle_count > 15:
-        density = "HIGH"
-    elif vehicle_count > 7:
-        density = "MEDIUM"
-    else:
-        density = "LOW"
+            # FPS calculation
+            curr_time = time.time()
+            fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
+            prev_time = curr_time
 
-    # Signal logic
-    if density == "HIGH":
-        signal = "GREEN"
-        green_time = 40
-    elif density == "MEDIUM":
-        signal = "YELLOW"
-        green_time = 25
-    else:
-        signal = "RED"
-        green_time = 15
+            # ROI
+            roi = (0, int(h * 0.5), w, h)
+            cv2.rectangle(frame, (roi[0], roi[1]), (roi[2], roi[3]), (255, 0, 0), 2)
 
-    set_signal(signal)
+            # Detection
+            results = model(frame)
+            detections = results.xyxy[0]
 
+            vehicle_count = 0
 
-    # Display count
-    cv2.putText(frame, f"Vehicles: {vehicle_count}",
-                (20,50), cv2.FONT_HERSHEY_SIMPLEX,
-                1, (0,0,255), 2)
-    cv2.putText(frame, f"Density: {density}",
-            (20, 100), cv2.FONT_HERSHEY_SIMPLEX,
-            0.8, (255,255,0), 2)
+            for *box, conf, cls in detections:
+                cls = int(cls.item())
 
-    cv2.putText(frame, f"Signal: {signal}",
-            (20, 140), cv2.FONT_HERSHEY_SIMPLEX,
-            0.8, (0,255,255), 2)
+                if cls in [2, 3, 5, 7]:
+                    x1, y1, x2, y2 = [int(x.item()) for x in box]
 
-    cv2.putText(frame, f"Time: {green_time}s",
-            (20, 180), cv2.FONT_HERSHEY_SIMPLEX,
-            0.8, (255,0,255), 2)
+                    cx = (x1 + x2) // 2
+                    cy = (y1 + y2) // 2
 
-    cv2.imshow("Traffic Detection", frame)
+                    if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
+                        vehicle_count += 1
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-    if cv2.waitKey(1) & 0xFF == 27:
-        break
+            # Density logic
+            if vehicle_count > 15:
+                density = "HIGH"
+            elif vehicle_count > 7:
+                density = "MEDIUM"
+            else:
+                density = "LOW"
 
-cap.release()
-cv2.destroyAllWindows()
-cleanup()
+            # Signal logic
+            if density == "HIGH":
+                signal = "GREEN"
+                green_time = 40
+            elif density == "MEDIUM":
+                signal = "YELLOW"
+                green_time = 25
+            else:
+                signal = "RED"
+                green_time = 15
+
+            set_signal(signal)
+
+            # Save data
+            results_log.append([video_name, vehicle_count, density])
+
+            # Display text
+            cv2.putText(frame, f"{video_name}", (20, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+
+            cv2.putText(frame, f"Vehicles: {vehicle_count}", (20, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+
+            cv2.putText(frame, f"Density: {density}", (20, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
+
+            cv2.putText(frame, f"Signal: {signal}", (20, 140),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+
+            cv2.putText(frame, f"FPS: {int(fps)}", (20, 180),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+
+            # Save output video
+            out.write(frame)
+
+            cv2.imshow("Traffic System", frame)
+
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
+
+        cap.release()
+        if out:
+            out.release()
+
+    cv2.destroyAllWindows()
+
+finally:
+    cleanup()
+
+# Save results to file
+with open("outputs/results.txt", "w") as f:
+    for row in results_log:
+        f.write(f"{row[0]}, {row[1]}, {row[2]}\n")
