@@ -1,7 +1,7 @@
-# Ignore large videos
-outputs/*.mp4
-data/*.mp4
-
-# Optional
+.venv/
+venv/
 __pycache__/
 *.pyc
+.DS_Store
+outputs/
+*.mp4
