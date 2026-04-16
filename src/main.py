@@ -3,10 +3,15 @@ import cv2
 import os
 import time
 
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 from hardware.gpio_control import set_signal, cleanup
 
 # Load YOLOv5 model
-model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True)
+import yolov5
+import sys
+sys.path.insert(0, './yolov5')
+from hubconf import custom
+model = custom('yolov5n')
 
 # Folder containing ALL videos
 video_folder = "data"
@@ -26,7 +31,7 @@ try:
 
         print(f"\nProcessing: {video_name}")
 
-        cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
+        cap =cv2.VideoCapture(os.path.join(video_folder, video_name))
 
         # Video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -119,10 +124,10 @@ try:
             # Save output video
             out.write(frame)
 
-            cv2.imshow("Traffic System", frame)
+            #cv2.imshow("Traffic System", frame)
 
-            if cv2.waitKey(1) & 0xFF == 27:
-                break
+            #if cv2.waitKey(1) & 0xFF == 27:
+             #   break
 
         cap.release()
         if out:
