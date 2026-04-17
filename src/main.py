@@ -5,8 +5,8 @@ import sys
 import torch
 import numpy as np
 from pathlib import Path
-
-#os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 
 from hardware.gpio_control import TrafficSignalController
 from src.accuracy_metrics import AccuracyMetrics
@@ -46,7 +46,7 @@ try:
     for video_name in video_files:
         print(f"\n{'='*60}")
         print(f"Processing: {video_name}")
-        print(f"Playing on screen + LED blinking...")
+        print(f"LED blinking + Processing...") 
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
@@ -128,7 +128,7 @@ try:
                 density = "LOW"
                 signal = "GREEN"
             
-            # Control LED (blinks while video plays)
+            # Control LED (blinks while video is processed)
             gpio_controller.set_signal(signal)
             
             # Log results
@@ -149,21 +149,12 @@ try:
             # Save output video
             out.write(frame)
             
-            # Display on screen (with LED blinking simultaneously!)
-            cv2.imshow(f"Traffic Density - {video_name}", frame)
-            
-            # Press 'q' to skip current video
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-            
             if frame_count % 30 == 0:
                 print(f"  Frame {frame_count}: Vehicles={vehicle_count}, Density={density}")
         
         cap.release()
         if out:
             out.release()
-        
-        cv2.destroyAllWindows()
         
         # Log final metrics for this video
         metrics.end_video()
