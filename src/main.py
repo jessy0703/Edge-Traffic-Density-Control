@@ -5,8 +5,6 @@ import sys
 import torch
 import numpy as np
 from pathlib import Path
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
 
 from hardware.gpio_control import TrafficSignalController
 from src.accuracy_metrics import AccuracyMetrics
@@ -14,7 +12,6 @@ from src.accuracy_metrics import AccuracyMetrics
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
-# Load YOLOv5 using torch.hub (simpler, no import issues)
 print("Loading YOLOv5 model...")
 model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True, force_reload=False)
 model.to(device)
@@ -42,11 +39,31 @@ if not video_files:
 
 results_log = []
 
+# Motion detection setup
+fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
+
+def is_vehicle_moving(frame, x1, y1, x2, y2, fgbg):
+    """Check if vehicle is moving using motion detection"""
+    try:
+        # Get motion mask
+        fgmask = fgbg.apply(frame)
+        
+        # Region of interest
+        roi_motion = fgmask[y1:y2, x1:x2]
+        
+        # Count white pixels (motion)
+        motion_pixels = cv2.countNonZero(roi_motion)
+        motion_ratio = motion_pixels / (roi_motion.shape[0] * roi_motion.shape[1] + 1)
+        
+        # If > 5% of bounding box is moving, it's a moving vehicle
+        return motion_ratio > 0.05
+    except:
+        return True  # If error, count as moving (safe default)
+
 try:
     for video_name in video_files:
         print(f"\n{'='*60}")
         print(f"Processing: {video_name}")
-        print(f"LED blinking + Processing...") 
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
@@ -86,8 +103,9 @@ try:
             fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
             prev_time = curr_time
             
-            # ROI (full frame for better detection - detects all vehicles)
-            roi = (0, 0, w, h)
+            # ROI (70-80% of frame - exclude top 20%)
+            roi_top = int(h * 0.2)
+            roi = (0, roi_top, w, h)
             cv2.rectangle(frame, (roi[0], roi[1]), (roi[2], roi[3]), (255, 0, 0), 2)
             
             # YOLOv5 Detection
@@ -107,11 +125,15 @@ try:
                     cx = (x1 + x2) // 2
                     cy = (y1 + y2) // 2
                     
-                    # Count only vehicles in ROI
+                    # Count only vehicles in ROI AND moving
                     if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
-                        vehicle_count += 1
-                        confidences.append(float(conf))
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        if is_vehicle_moving(frame, x1, y1, x2, y2, fgbg):
+                            vehicle_count += 1
+                            confidences.append(float(conf))
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        else:
+                            # Draw stationary vehicles in different color (debug)
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
             
             # Log frame metrics
             frame_time = time.time() - frame_start
@@ -128,7 +150,7 @@ try:
                 density = "LOW"
                 signal = "GREEN"
             
-            # Control LED (blinks while video is processed)
+            # Control LED (blinks while processing)
             gpio_controller.set_signal(signal)
             
             # Log results
@@ -137,7 +159,7 @@ try:
             # Display info on frame
             cv2.putText(frame, f"{video_name}", (20, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-            cv2.putText(frame, f"Vehicles: {vehicle_count}", (20, 60),
+            cv2.putText(frame, f"Moving Vehicles: {vehicle_count}", (20, 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
             cv2.putText(frame, f"Density: {density}", (20, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
@@ -150,7 +172,7 @@ try:
             out.write(frame)
             
             if frame_count % 30 == 0:
-                print(f"  Frame {frame_count}: Vehicles={vehicle_count}, Density={density}")
+                print(f"  Frame {frame_count}: Moving Vehicles={vehicle_count}, Density={density}")
         
         cap.release()
         if out:
