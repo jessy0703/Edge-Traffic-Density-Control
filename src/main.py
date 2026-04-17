@@ -6,7 +6,7 @@ import torch
 import numpy as np
 from pathlib import Path
 
-os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+#os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 from hardware.gpio_control import TrafficSignalController
 from src.accuracy_metrics import AccuracyMetrics
