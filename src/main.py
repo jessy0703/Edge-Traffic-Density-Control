@@ -39,22 +39,17 @@ if not video_files:
 
 results_log = []
 
-# Simple motion tracking (lightweight)
-prev_frame_gray = None
-
-def is_vehicle_moving_fast(frame, x1, y1, x2, y2, prev_frame_gray):
+def is_vehicle_moving_fast(frame, x1, y1, x2, y2):
     """Fast motion detection using frame difference"""
-    global prev_frame_gray
-    
     try:
         curr_frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        if prev_frame_gray is None:
-            prev_frame_gray = curr_frame_gray.copy()
+        if is_vehicle_moving_fast.prev_frame_gray is None:
+            is_vehicle_moving_fast.prev_frame_gray = curr_frame_gray.copy()
             return True  # First frame, assume moving
         
         # Get difference
-        frame_diff = cv2.absdiff(prev_frame_gray, curr_frame_gray)
+        frame_diff = cv2.absdiff(is_vehicle_moving_fast.prev_frame_gray, curr_frame_gray)
         
         # Check motion in ROI
         roi_diff = frame_diff[y1:y2, x1:x2]
@@ -65,11 +60,14 @@ def is_vehicle_moving_fast(frame, x1, y1, x2, y2, prev_frame_gray):
         
         # Update prev frame every 5 frames (less overhead)
         if int(time.time() * 100) % 5 == 0:
-            prev_frame_gray = curr_frame_gray.copy()
+            is_vehicle_moving_fast.prev_frame_gray = curr_frame_gray.copy()
         
         return result
     except:
         return True
+
+# Initialize the function attribute
+is_vehicle_moving_fast.prev_frame_gray = None
 
 try:
     for video_name in video_files:
@@ -78,7 +76,6 @@ try:
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
-        prev_frame_gray = None
         
         cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
         
@@ -139,7 +136,7 @@ try:
                     
                     # Count only vehicles in ROI AND moving
                     if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
-                        if is_vehicle_moving_fast(frame, x1, y1, x2, y2, prev_frame_gray):
+                        if is_vehicle_moving_fast(frame, x1, y1, x2, y2):
                             vehicle_count += 1
                             confidences.append(float(conf))
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
