@@ -9,6 +9,7 @@ from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 from hardware.gpio_control import TrafficSignalController
+from src.accuracy_metrics import AccuracyMetrics
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
@@ -23,6 +24,9 @@ print("✅ Model loaded successfully")
 
 # Initialize GPIO
 gpio_controller = TrafficSignalController()
+
+# Initialize metrics tracker
+metrics = AccuracyMetrics()
 
 # Folder containing videos
 video_folder = "data"
@@ -43,6 +47,8 @@ try:
         print(f"\n{'='*60}")
         print(f"Processing: {video_name}")
         print(f"{'='*60}")
+        
+        metrics.start_video(video_name)
         
         cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
         
@@ -71,6 +77,9 @@ try:
                     fourcc, 10, (w, h)
                 )
             
+            # Frame processing time
+            frame_start = time.time()
+            
             # FPS calculation
             curr_time = time.time()
             fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
@@ -85,6 +94,7 @@ try:
             detections = results.xyxy[0].cpu().numpy()
             
             vehicle_count = 0
+            confidences = []
             
             for detection in detections:
                 x1, y1, x2, y2, conf, cls = detection
@@ -99,7 +109,12 @@ try:
                     # Count only vehicles in ROI
                     if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
                         vehicle_count += 1
+                        confidences.append(float(conf))
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
+            # Log frame metrics
+            frame_time = time.time() - frame_start
+            metrics.log_frame(vehicle_count, frame_time, confidences)
             
             # Traffic density logic
             if vehicle_count > 15:
@@ -140,9 +155,13 @@ try:
         if out:
             out.release()
         
+        # Log final metrics for this video
+        metrics.end_video()
+        
         print(f"✅ Finished {video_name}")
     
     cv2.destroyAllWindows()
+    metrics.log_summary()
 
 finally:
     gpio_controller.cleanup()
