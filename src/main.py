@@ -5,6 +5,7 @@ import sys
 import torch
 import numpy as np
 from pathlib import Path
+import threading
 
 from hardware.gpio_control import TrafficSignalController
 from src.accuracy_metrics import AccuracyMetrics
@@ -71,11 +72,11 @@ class MotionDetector:
             if int(time.time() * 30) % 3 == 0:
                 self.prev_frame_gray = curr_frame_gray.copy()
             
-            # Return True if motion > 1% (stationary threshold)
+            # Return True if motion > 1%
             return motion_ratio > 0.01
             
         except Exception as e:
-            return True  # If error, assume moving
+            return True
 
 # Initialize motion detector
 motion_detector = MotionDetector()
@@ -87,7 +88,7 @@ try:
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
-        motion_detector.prev_frame_gray = None  # Reset for each video
+        motion_detector.prev_frame_gray = None
         
         cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
         
@@ -100,6 +101,9 @@ try:
         out = None
         prev_time = 0
         frame_count = 0
+        current_signal = "GREEN"
+        signal_change_threshold = 2
+        frame_since_signal_change = 0
         
         while True:
             ret, frame = cap.read()
@@ -124,9 +128,8 @@ try:
             fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
             prev_time = curr_time
             
-            # ROI (90% of frame - exclude top 10%)
-            roi_top = int(h * 0.1)
-            roi = (0, roi_top, w, h)
+            # ROI (100% full frame)
+            roi = (0, 0, w, h)
             cv2.rectangle(frame, (roi[0], roi[1]), (roi[2], roi[3]), (255, 0, 0), 2)
             
             # YOLOv5 Detection
@@ -148,7 +151,7 @@ try:
                     cx = (x1 + x2) // 2
                     cy = (y1 + y2) // 2
                     
-                    # Count only vehicles in ROI
+                    # Count only vehicles in full frame ROI
                     if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
                         vehicle_count += 1
                         confidences.append(float(conf))
@@ -170,19 +173,38 @@ try:
             # Traffic density logic (based on moving vehicles)
             if moving_count > 15:
                 density = "HIGH"
-                signal = "RED"
+                new_signal = "RED"
             elif moving_count > 7:
                 density = "MEDIUM"
-                signal = "YELLOW"
+                new_signal = "YELLOW"
             else:
                 density = "LOW"
-                signal = "GREEN"
+                new_signal = "GREEN"
             
-            # Control LED
-            gpio_controller.set_signal(signal)
+            # Update signal and control LED (sync with frame display)
+            frame_since_signal_change += 1
+            if new_signal != current_signal or frame_since_signal_change >= signal_change_threshold:
+                current_signal = new_signal
+                frame_since_signal_change = 0
+                gpio_controller.set_signal(current_signal)
+                print(f"  [LED] {current_signal} - Frame {frame_count}")
             
             # Log results
             results_log.append([video_name, moving_count, density])
+            
+            # Display info on frame with COLOR indicator for LED status
+            led_color_map = {
+                "RED": (0, 0, 255),
+                "YELLOW": (0, 255, 255),
+                "GREEN": (0, 255, 0)
+            }
+            led_color = led_color_map.get(current_signal, (0, 255, 0))
+            
+            # Draw LED indicator box
+            cv2.rectangle(frame, (w-100, 20), (w-20, 80), led_color, -1)
+            cv2.rectangle(frame, (w-100, 20), (w-20, 80), (255, 255, 255), 2)
+            cv2.putText(frame, current_signal, (w-95, 55),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
             
             # Display info on frame
             cv2.putText(frame, f"{video_name}", (20, 30),
@@ -193,16 +215,14 @@ try:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
             cv2.putText(frame, f"Density: {density}", (20, 120),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-            cv2.putText(frame, f"Signal: {signal}", (20, 150),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.putText(frame, f"FPS: {int(fps)}", (20, 180),
+            cv2.putText(frame, f"FPS: {int(fps)}", (20, 150),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
             # Save output video
             out.write(frame)
             
             if frame_count % 30 == 0:
-                print(f"  Frame {frame_count}: Moving={moving_count}, Stationary={stationary_count}, Density={density}")
+                print(f"  Frame {frame_count}: Moving={moving_count}, Stationary={stationary_count}, Signal={current_signal}")
         
         cap.release()
         if out:
