@@ -103,7 +103,7 @@ try:
         frame_count = 0
         current_signal = "GREEN"
         frames_buffer = []  # Buffer to collect frames
-        LED_UPDATE_INTERVAL = 15  # Update LED every 15 frames (half of 30)
+        LED_UPDATE_INTERVAL = 15  # Update LED every 15 frames
         
         while True:
             ret, frame = cap.read()
