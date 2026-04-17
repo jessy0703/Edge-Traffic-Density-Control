@@ -102,8 +102,8 @@ try:
         prev_time = 0
         frame_count = 0
         current_signal = "GREEN"
-        signal_change_threshold = 2
-        frame_since_signal_change = 0
+        frames_buffer = []  # Buffer to collect 30 frames worth of data
+        LED_UPDATE_INTERVAL = 30  # Update LED every 30 frames
         
         while True:
             ret, frame = cap.read()
@@ -181,13 +181,36 @@ try:
                 density = "LOW"
                 new_signal = "GREEN"
             
-            # Update signal and control LED (sync with frame display)
-            frame_since_signal_change += 1
-            if new_signal != current_signal or frame_since_signal_change >= signal_change_threshold:
-                current_signal = new_signal
-                frame_since_signal_change = 0
-                gpio_controller.set_signal(current_signal)
-                print(f"  [LED] {current_signal} - Frame {frame_count}")
+            # Store frame data in buffer
+            frames_buffer.append({
+                'moving': moving_count,
+                'stationary': stationary_count,
+                'total': vehicle_count,
+                'density': density,
+                'signal': new_signal
+            })
+            
+            # Update LED every 30 frames (average over buffer)
+            if len(frames_buffer) >= LED_UPDATE_INTERVAL:
+                # Calculate average moving vehicles over 30 frames
+                avg_moving = sum(f['moving'] for f in frames_buffer) / len(frames_buffer)
+                
+                # Determine signal based on average
+                if avg_moving > 15:
+                    final_signal = "RED"
+                elif avg_moving > 7:
+                    final_signal = "YELLOW"
+                else:
+                    final_signal = "GREEN"
+                
+                # Only change if signal differs
+                if final_signal != current_signal:
+                    current_signal = final_signal
+                    gpio_controller.set_signal(current_signal)
+                    print(f"  [LED] {current_signal} (Avg Moving: {avg_moving:.1f}) - Frame {frame_count}")
+                
+                # Clear buffer
+                frames_buffer = []
             
             # Log results
             results_log.append([video_name, moving_count, density])
