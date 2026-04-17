@@ -46,6 +46,7 @@ try:
     for video_name in video_files:
         print(f"\n{'='*60}")
         print(f"Processing: {video_name}")
+        print(f"Playing on screen + LED blinking...")
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
@@ -85,8 +86,8 @@ try:
             fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
             prev_time = curr_time
             
-            # ROI (Region of Interest)
-            roi = (0, int(h * 0.5), w, h)
+            # ROI (full frame for better detection - detects all vehicles)
+            roi = (0, 0, w, h)
             cv2.rectangle(frame, (roi[0], roi[1]), (roi[2], roi[3]), (255, 0, 0), 2)
             
             # YOLOv5 Detection
@@ -127,7 +128,7 @@ try:
                 density = "LOW"
                 signal = "GREEN"
             
-            # Control LED
+            # Control LED (blinks while video plays)
             gpio_controller.set_signal(signal)
             
             # Log results
@@ -148,6 +149,13 @@ try:
             # Save output video
             out.write(frame)
             
+            # Display on screen (with LED blinking simultaneously!)
+            cv2.imshow(f"Traffic Density - {video_name}", frame)
+            
+            # Press 'q' to skip current video
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            
             if frame_count % 30 == 0:
                 print(f"  Frame {frame_count}: Vehicles={vehicle_count}, Density={density}")
         
@@ -155,14 +163,19 @@ try:
         if out:
             out.release()
         
+        cv2.destroyAllWindows()
+        
         # Log final metrics for this video
         metrics.end_video()
         
         print(f"✅ Finished {video_name}")
     
-    cv2.destroyAllWindows()
     metrics.log_summary()
 
+except KeyboardInterrupt:
+    print("\n[USER] Stopped by user")
+except Exception as e:
+    print(f"[ERROR] {str(e)}")
 finally:
     gpio_controller.cleanup()
 
