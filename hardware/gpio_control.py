@@ -28,19 +28,12 @@ class TrafficSignalController:
             self.gpio_available = True
             print("[GPIO] ✅ Hardware mode initialized")
             
-            # Register cleanup on exit
+            # Register cleanup on exit only
             atexit.register(self.cleanup)
-            signal.signal(signal.SIGINT, self._signal_handler)
             
         except Exception as e:
             print(f"[GPIO] ⚠️  Simulation mode ({str(e)[:50]})")
             self.GPIO = None
-
-    def _signal_handler(self, sig, frame):
-        """Handle Ctrl+C"""
-        print("\n[GPIO] Interrupt detected, cleaning up...")
-        self.cleanup()
-        exit(0)
 
     def set_signal(self, signal):
         """Set traffic signal LED with debouncing"""
