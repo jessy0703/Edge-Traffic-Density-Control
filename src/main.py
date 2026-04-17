@@ -39,35 +39,46 @@ if not video_files:
 
 results_log = []
 
-def is_vehicle_moving_fast(frame, x1, y1, x2, y2):
-    """Fast motion detection using frame difference"""
-    try:
-        curr_frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        if is_vehicle_moving_fast.prev_frame_gray is None:
-            is_vehicle_moving_fast.prev_frame_gray = curr_frame_gray.copy()
-            return True  # First frame, assume moving
-        
-        # Get difference
-        frame_diff = cv2.absdiff(is_vehicle_moving_fast.prev_frame_gray, curr_frame_gray)
-        
-        # Check motion in ROI
-        roi_diff = frame_diff[y1:y2, x1:x2]
-        motion_pixels = np.sum(roi_diff > 20)  # Threshold 20
-        motion_ratio = motion_pixels / (roi_diff.shape[0] * roi_diff.shape[1] + 1)
-        
-        result = motion_ratio > 0.03  # 3% threshold
-        
-        # Update prev frame every 5 frames (less overhead)
-        if int(time.time() * 100) % 5 == 0:
-            is_vehicle_moving_fast.prev_frame_gray = curr_frame_gray.copy()
-        
-        return result
-    except:
-        return True
+class MotionDetector:
+    """Lightweight motion detection"""
+    def __init__(self):
+        self.prev_frame_gray = None
+    
+    def is_moving(self, frame, x1, y1, x2, y2):
+        """Check if vehicle is moving"""
+        try:
+            curr_frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            if self.prev_frame_gray is None:
+                self.prev_frame_gray = curr_frame_gray.copy()
+                return True
+            
+            # Get frame difference
+            frame_diff = cv2.absdiff(self.prev_frame_gray, curr_frame_gray)
+            
+            # Check motion in vehicle ROI
+            roi_diff = frame_diff[max(0, y1):min(frame_diff.shape[0], y2), 
+                                   max(0, x1):min(frame_diff.shape[1], x2)]
+            
+            if roi_diff.size == 0:
+                return True
+            
+            # Count pixels with motion (threshold: 20)
+            motion_pixels = np.sum(roi_diff > 20)
+            motion_ratio = motion_pixels / roi_diff.size
+            
+            # Update prev frame every 3 frames
+            if int(time.time() * 30) % 3 == 0:
+                self.prev_frame_gray = curr_frame_gray.copy()
+            
+            # Return True if motion > 1% (stationary threshold)
+            return motion_ratio > 0.01
+            
+        except Exception as e:
+            return True  # If error, assume moving
 
-# Initialize the function attribute
-is_vehicle_moving_fast.prev_frame_gray = None
+# Initialize motion detector
+motion_detector = MotionDetector()
 
 try:
     for video_name in video_files:
@@ -76,6 +87,7 @@ try:
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
+        motion_detector.prev_frame_gray = None  # Reset for each video
         
         cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
         
@@ -112,8 +124,8 @@ try:
             fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
             prev_time = curr_time
             
-            # ROI (70-80% of frame - exclude top 20%)
-            roi_top = int(h * 0.2)
+            # ROI (90% of frame - exclude top 10%)
+            roi_top = int(h * 0.1)
             roi = (0, roi_top, w, h)
             cv2.rectangle(frame, (roi[0], roi[1]), (roi[2], roi[3]), (255, 0, 0), 2)
             
@@ -122,6 +134,8 @@ try:
             detections = results.xyxy[0].cpu().numpy()
             
             vehicle_count = 0
+            moving_count = 0
+            stationary_count = 0
             confidences = []
             
             for detection in detections:
@@ -134,25 +148,30 @@ try:
                     cx = (x1 + x2) // 2
                     cy = (y1 + y2) // 2
                     
-                    # Count only vehicles in ROI AND moving
+                    # Count only vehicles in ROI
                     if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
-                        if is_vehicle_moving_fast(frame, x1, y1, x2, y2):
-                            vehicle_count += 1
-                            confidences.append(float(conf))
+                        vehicle_count += 1
+                        confidences.append(float(conf))
+                        
+                        # Check if moving
+                        if motion_detector.is_moving(frame, x1, y1, x2, y2):
+                            moving_count += 1
+                            # Green box = Moving
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         else:
-                            # Stationary vehicles in red (debug)
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
+                            stationary_count += 1
+                            # Red box = Stationary
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
             
-            # Log frame metrics
+            # Log frame metrics (only moving vehicles)
             frame_time = time.time() - frame_start
-            metrics.log_frame(vehicle_count, frame_time, confidences)
+            metrics.log_frame(moving_count, frame_time, confidences)
             
-            # Traffic density logic
-            if vehicle_count > 15:
+            # Traffic density logic (based on moving vehicles)
+            if moving_count > 15:
                 density = "HIGH"
                 signal = "RED"
-            elif vehicle_count > 7:
+            elif moving_count > 7:
                 density = "MEDIUM"
                 signal = "YELLOW"
             else:
@@ -163,25 +182,27 @@ try:
             gpio_controller.set_signal(signal)
             
             # Log results
-            results_log.append([video_name, vehicle_count, density])
+            results_log.append([video_name, moving_count, density])
             
             # Display info on frame
             cv2.putText(frame, f"{video_name}", (20, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-            cv2.putText(frame, f"Moving Vehicles: {vehicle_count}", (20, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
-            cv2.putText(frame, f"Density: {density}", (20, 100),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
-            cv2.putText(frame, f"Signal: {signal}", (20, 140),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(frame, f"Moving: {moving_count} | Stationary: {stationary_count}", (20, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(frame, f"Total Detected: {vehicle_count}", (20, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+            cv2.putText(frame, f"Density: {density}", (20, 120),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+            cv2.putText(frame, f"Signal: {signal}", (20, 150),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             cv2.putText(frame, f"FPS: {int(fps)}", (20, 180),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
             # Save output video
             out.write(frame)
             
             if frame_count % 30 == 0:
-                print(f"  Frame {frame_count}: Moving Vehicles={vehicle_count}, Density={density}")
+                print(f"  Frame {frame_count}: Moving={moving_count}, Stationary={stationary_count}, Density={density}")
         
         cap.release()
         if out:
@@ -197,6 +218,8 @@ except KeyboardInterrupt:
     print("\n[USER] Stopped by user")
 except Exception as e:
     print(f"[ERROR] {str(e)}")
+    import traceback
+    traceback.print_exc()
 finally:
     gpio_controller.cleanup()
 
