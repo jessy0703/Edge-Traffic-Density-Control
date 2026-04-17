@@ -1,49 +1,77 @@
 import time
 import logging
-
-# Configure logging
-logging.basicConfig(filename='outputs/accuracy_report.txt', level=logging.INFO)
+import numpy as np
 
 class AccuracyMetrics:
-    def __init__(self):
-        self.detection_confidence = 0.0
-        self.fps = 0.0
-        self.vehicle_count_accuracy = 0.0
-        self.led_signal_accuracy = 0.0
-        self.processing_time = 0.0
+    def __init__(self, output_file='outputs/accuracy_report.txt'):
+        """Initialize accuracy metrics tracker"""
+        self.output_file = output_file
+        
+        # Configure logging
+        logging.basicConfig(
+            filename=output_file,
+            level=logging.INFO,
+            format='%(message)s',
+            filemode='a'
+        )
+        self.logger = logging.getLogger(__name__)
+        
+        # Metrics storage
+        self.vehicle_counts = []
+        self.frame_times = []
+        self.detection_confidences = []
+        self.start_time = None
+        self.frame_count = 0
 
-    def log_metrics(self, start_time, detected_vehicles, expected_vehicles, led_signals):
-        end_time = time.time()
-        self.processing_time = end_time - start_time
-        self.detection_confidence = self.calculate_detection_confidence(detected_vehicles, expected_vehicles)
-        self.fps = 1.0 / self.processing_time
-        self.vehicle_count_accuracy = self.calculate_count_accuracy(detected_vehicles, expected_vehicles)
-        self.led_signal_accuracy = self.calculate_led_accuracy(led_signals)
+    def start_video(self, video_name):
+        """Start tracking for a new video"""
+        self.vehicle_counts = []
+        self.frame_times = []
+        self.detection_confidences = []
+        self.start_time = time.time()
+        self.frame_count = 0
+        
+        self.logger.info(f"\n{'='*60}")
+        self.logger.info(f"Video: {video_name}")
+        self.logger.info(f"{'='*60}")
 
-        logging.info(f'Date: {time.strftime("%Y-%m-%d %H:%M:%S")}')
-        logging.info(f'Detection Confidence: {self.detection_confidence:.2f}')
-        logging.info(f'FPS: {self.fps:.2f}')
-        logging.info(f'Vehicle Count Accuracy: {self.vehicle_count_accuracy:.2f}')
-        logging.info(f'LED Signal Accuracy: {self.led_signal_accuracy:.2f}')
-        logging.info(f'Processing Time: {self.processing_time:.2f} seconds')
+    def log_frame(self, vehicle_count, frame_time, confidences):
+        """Log metrics for a single frame"""
+        self.frame_count += 1
+        self.vehicle_counts.append(vehicle_count)
+        self.frame_times.append(frame_time)
+        
+        if confidences:
+            self.detection_confidences.extend(confidences)
 
-    def calculate_detection_confidence(self, detected, expected):
-        return detected / expected if expected > 0 else 0.0
+    def end_video(self):
+        """Calculate and log final metrics for the video"""
+        if self.start_time is None or self.frame_count == 0:
+            return
+        
+        total_time = time.time() - self.start_time
+        
+        # Calculate metrics
+        avg_vehicle_count = np.mean(self.vehicle_counts)
+        max_vehicle_count = np.max(self.vehicle_counts)
+        min_vehicle_count = np.min(self.vehicle_counts)
+        avg_fps = self.frame_count / total_time
+        avg_frame_time = np.mean(self.frame_times) * 1000  # Convert to ms
+        avg_confidence = np.mean(self.detection_confidences) if self.detection_confidences else 0.0
+        
+        # Log final metrics
+        self.logger.info(f"Total Frames: {self.frame_count}")
+        self.logger.info(f"Total Processing Time: {total_time:.2f}s")
+        self.logger.info(f"Average FPS: {avg_fps:.2f}")
+        self.logger.info(f"Average Frame Processing Time: {avg_frame_time:.2f}ms")
+        self.logger.info(f"Average Detection Confidence: {avg_confidence:.4f}")
+        self.logger.info(f"Average Vehicle Count: {avg_vehicle_count:.2f}")
+        self.logger.info(f"Max Vehicle Count: {max_vehicle_count}")
+        self.logger.info(f"Min Vehicle Count: {min_vehicle_count}")
+        self.logger.info(f"✅ Video processing complete\n")
 
-    def calculate_count_accuracy(self, detected, expected):
-        return detected / expected if expected > 0 else 0.0
-
-    def calculate_led_accuracy(self, led_signals):
-        return 1.0  # Placeholder value for LED accuracy
-
-# Example usage
-if __name__ == '__main__':
-    metrics = AccuracyMetrics()
-    # Start timing the process
-    start_time = time.time()
-    # Simulate detected vehicles and expected vehicle count
-    detected_vehicles = 5
-    expected_vehicles = 6
-    led_signals = 1  # Assumed number of correct LED signals
-    
-    metrics.log_metrics(start_time, detected_vehicles, expected_vehicles, led_signals)
+    def log_summary(self):
+        """Log final summary"""
+        self.logger.info(f"{'='*60}")
+        self.logger.info("✅ All videos processed!")
+        self.logger.info(f"{'='*60}\n")
