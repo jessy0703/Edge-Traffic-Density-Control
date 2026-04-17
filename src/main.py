@@ -39,26 +39,37 @@ if not video_files:
 
 results_log = []
 
-# Motion detection setup
-fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
+# Simple motion tracking (lightweight)
+prev_frame_gray = None
 
-def is_vehicle_moving(frame, x1, y1, x2, y2, fgbg):
-    """Check if vehicle is moving using motion detection"""
+def is_vehicle_moving_fast(frame, x1, y1, x2, y2, prev_frame_gray):
+    """Fast motion detection using frame difference"""
+    global prev_frame_gray
+    
     try:
-        # Get motion mask
-        fgmask = fgbg.apply(frame)
+        curr_frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Region of interest
-        roi_motion = fgmask[y1:y2, x1:x2]
+        if prev_frame_gray is None:
+            prev_frame_gray = curr_frame_gray.copy()
+            return True  # First frame, assume moving
         
-        # Count white pixels (motion)
-        motion_pixels = cv2.countNonZero(roi_motion)
-        motion_ratio = motion_pixels / (roi_motion.shape[0] * roi_motion.shape[1] + 1)
+        # Get difference
+        frame_diff = cv2.absdiff(prev_frame_gray, curr_frame_gray)
         
-        # If > 5% of bounding box is moving, it's a moving vehicle
-        return motion_ratio > 0.05
+        # Check motion in ROI
+        roi_diff = frame_diff[y1:y2, x1:x2]
+        motion_pixels = np.sum(roi_diff > 20)  # Threshold 20
+        motion_ratio = motion_pixels / (roi_diff.shape[0] * roi_diff.shape[1] + 1)
+        
+        result = motion_ratio > 0.03  # 3% threshold
+        
+        # Update prev frame every 5 frames (less overhead)
+        if int(time.time() * 100) % 5 == 0:
+            prev_frame_gray = curr_frame_gray.copy()
+        
+        return result
     except:
-        return True  # If error, count as moving (safe default)
+        return True
 
 try:
     for video_name in video_files:
@@ -67,6 +78,7 @@ try:
         print(f"{'='*60}")
         
         metrics.start_video(video_name)
+        prev_frame_gray = None
         
         cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
         
@@ -127,12 +139,12 @@ try:
                     
                     # Count only vehicles in ROI AND moving
                     if roi[0] < cx < roi[2] and roi[1] < cy < roi[3]:
-                        if is_vehicle_moving(frame, x1, y1, x2, y2, fgbg):
+                        if is_vehicle_moving_fast(frame, x1, y1, x2, y2, prev_frame_gray):
                             vehicle_count += 1
                             confidences.append(float(conf))
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         else:
-                            # Draw stationary vehicles in different color (debug)
+                            # Stationary vehicles in red (debug)
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
             
             # Log frame metrics
@@ -150,7 +162,7 @@ try:
                 density = "LOW"
                 signal = "GREEN"
             
-            # Control LED (blinks while processing)
+            # Control LED
             gpio_controller.set_signal(signal)
             
             # Log results
@@ -178,7 +190,6 @@ try:
         if out:
             out.release()
         
-        # Log final metrics for this video
         metrics.end_video()
         
         print(f"✅ Finished {video_name}")
