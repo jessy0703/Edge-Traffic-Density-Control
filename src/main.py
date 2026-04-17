@@ -1,15 +1,25 @@
 import cv2
 import os
 import time
+import sys
+import torch
+import numpy as np
+from pathlib import Path
 
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
 from hardware.gpio_control import TrafficSignalController
 
-# Load YOLOv5 model using hubconf (NO torch import needed!)
-import sys
-sys.path.insert(0, './yolov5')
-from hubconf import custom
-model = custom('yolov5n')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# Load YOLOv5 using torch.hub (simpler, no import issues)
+print("Loading YOLOv5 model...")
+model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True, force_reload=False)
+model.to(device)
+model.eval()
+
+print("✅ Model loaded successfully")
 
 # Initialize GPIO
 gpio_controller = TrafficSignalController()
@@ -22,24 +32,36 @@ os.makedirs(output_folder, exist_ok=True)
 # Get all video files
 video_files = [f for f in os.listdir(video_folder) if f.endswith((".mp4", ".avi"))]
 
+if not video_files:
+    print("❌ No video files found in data/ folder")
+    sys.exit(1)
+
 results_log = []
 
 try:
     for video_name in video_files:
-        print(f"\nProcessing: {video_name}")
+        print(f"\n{'='*60}")
+        print(f"Processing: {video_name}")
+        print(f"{'='*60}")
         
         cap = cv2.VideoCapture(os.path.join(video_folder, video_name))
+        
+        if not cap.isOpened():
+            print(f"❌ Failed to open {video_name}")
+            continue
         
         # Video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = None
         prev_time = 0
+        frame_count = 0
         
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             
+            frame_count += 1
             h, w, _ = frame.shape
             
             # Initialize output video writer
@@ -60,17 +82,17 @@ try:
             
             # YOLOv5 Detection
             results = model(frame)
-            detections = results.xyxy[0]
+            detections = results.xyxy[0].cpu().numpy()
             
             vehicle_count = 0
             
-            for *box, conf, cls in detections:
-                cls = int(cls.item())
+            for detection in detections:
+                x1, y1, x2, y2, conf, cls = detection
+                cls = int(cls)
                 
                 # Vehicle classes: 2=car, 3=motorcycle, 5=bus, 7=truck
                 if cls in [2, 3, 5, 7]:
-                    x1, y1, x2, y2 = [int(x.item()) for x in box]
-                    
+                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
                     cx = (x1 + x2) // 2
                     cy = (y1 + y2) // 2
                     
@@ -110,10 +132,15 @@ try:
             
             # Save output video
             out.write(frame)
+            
+            if frame_count % 30 == 0:
+                print(f"  Frame {frame_count}: Vehicles={vehicle_count}, Density={density}")
         
         cap.release()
         if out:
             out.release()
+        
+        print(f"✅ Finished {video_name}")
     
     cv2.destroyAllWindows()
 
@@ -125,4 +152,6 @@ with open("outputs/results.txt", "w") as f:
     for row in results_log:
         f.write(f"{row[0]}, {row[1]}, {row[2]}\n")
 
+print("\n" + "="*60)
 print("✅ Processing complete!")
+print("="*60)
