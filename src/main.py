@@ -102,8 +102,8 @@ try:
         prev_time = 0
         frame_count = 0
         current_signal = "GREEN"
-        frames_buffer = []  # Buffer to collect 30 frames worth of data
-        LED_UPDATE_INTERVAL = 30  # Update LED every 30 frames
+        frames_buffer = []  # Buffer to collect frames
+        LED_UPDATE_INTERVAL = 15  # Update LED every 15 frames (half of 30)
         
         while True:
             ret, frame = cap.read()
@@ -190,12 +190,12 @@ try:
                 'signal': new_signal
             })
             
-            # Update LED every 30 frames (average over buffer)
+            # Update LED every 15 frames (average over buffer)
             if len(frames_buffer) >= LED_UPDATE_INTERVAL:
-                # Calculate average moving vehicles over 30 frames
+                # Calculate average moving vehicles over 15 frames
                 avg_moving = sum(f['moving'] for f in frames_buffer) / len(frames_buffer)
                 
-                # Determine signal based on average
+                # Determine signal based on average (ORIGINAL THRESHOLDS)
                 if avg_moving > 15:
                     final_signal = "RED"
                 elif avg_moving > 7:
@@ -244,7 +244,7 @@ try:
             # Save output video
             out.write(frame)
             
-            if frame_count % 30 == 0:
+            if frame_count % 15 == 0:
                 print(f"  Frame {frame_count}: Moving={moving_count}, Stationary={stationary_count}, Signal={current_signal}")
         
         cap.release()
