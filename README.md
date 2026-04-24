@@ -64,11 +64,11 @@ The system was tested using:
 
 ## 🚦 Signal Control Logic
 
-| Density | Signal | Time |
+| Density| Signal | Time |
 |--------|--------|------|
-| LOW    | RED    | 15s  |
+| LOW    | GREEN  | 15s  |
 | MEDIUM | YELLOW | 25s  |
-| HIGH   | GREEN  | 40s  |
+| HIGH   | RED    | 40s  |
 
 ---
 
